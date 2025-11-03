@@ -1,0 +1,14 @@
+Flask==3.0.0
+flask-cors==4.0.0
+Werkzeug==3.0.1
+python-dotenv==1.0.0
+Pillow==10.2.0
+PyMuPDF==1.26.5
+transformers>=4.36.0
+torch
+torchvision
+accelerate
+
+# Note: DeepSeek-OCR works with transformers 4.36+
+# Newer versions may have different attention implementations
+# The app.py code handles this with fallback loading strategies

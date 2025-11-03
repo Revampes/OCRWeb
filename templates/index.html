@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek OCR - Document Scanner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <i class="fas fa-file-text header-icon"></i>
+                <h1>DeepSeek OCR Scanner</h1>
+                <p class="subtitle">Extract text from images using AI-powered OCR</p>
+            </div>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <div class="api-key-section">
+                    <div class="info-banner">
+                        <i class="fas fa-info-circle"></i>
+                        <p><strong>Using DeepSeek-OCR Model</strong> - This app uses the local DeepSeek-OCR model for text extraction. No API key required!</p>
+                    </div>
+                </div>
+
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        <h2>Drop your document here</h2>
+                        <p>or click to browse</p>
+                        <input type="file" id="fileInput" accept="image/*,.pdf" hidden>
+                        <div class="supported-formats">
+                            Supported: PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP, PDF
+                        </div>
+                    </div>
+                </div>
+
+                <div class="preview-section" id="previewSection" style="display: none;">
+                    <h3><i class="fas fa-image"></i> Preview</h3>
+                    <img id="imagePreview" alt="Document preview">
+                    <div class="preview-info">
+                        <span id="fileName"></span>
+                        <button class="btn-secondary" id="changeFileBtn">
+                            <i class="fas fa-sync-alt"></i> Change File
+                        </button>
+                    </div>
+                </div>
+
+                <button class="btn-primary" id="scanBtn" style="display: none;">
+                    <i class="fas fa-search"></i> Scan Document
+                </button>
+            </div>
+
+            <div class="loading-section" id="loadingSection" style="display: none;">
+                <div class="spinner"></div>
+                <p>Processing your document...</p>
+            </div>
+
+            <div class="result-section" id="resultSection" style="display: none;">
+                <div class="result-header">
+                    <h3><i class="fas fa-check-circle"></i> Extracted Text</h3>
+                    <div class="result-actions">
+                        <button class="btn-icon" id="copyBtn" title="Copy to clipboard">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                        <button class="btn-icon" id="downloadBtn" title="Download as text file">
+                            <i class="fas fa-download"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="result-content">
+                    <pre id="ocrResult"></pre>
+                </div>
+                <button class="btn-secondary" id="scanAnotherBtn">
+                    <i class="fas fa-plus"></i> Scan Another Document
+                </button>
+            </div>
+
+            <div class="error-section" id="errorSection" style="display: none;">
+                <div class="error-content">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <h3>Error</h3>
+                    <p id="errorMessage"></p>
+                    <button class="btn-secondary" id="retryBtn">
+                        <i class="fas fa-redo"></i> Try Again
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Powered by <strong>DeepSeek AI</strong> | Built with ❤️</p>
+            <p class="footer-note">Get your API key at <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a></p>
+        </footer>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
