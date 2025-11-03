@@ -149,12 +149,14 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Global model instances (lazy loaded)
 _model = None
 _tokenizer = None
+_ocr_reader = None  # EasyOCR fallback
+_use_fallback = False  # Track if we should use fallback
 
 def get_deepseek_model():
     """Lazy load DeepSeek-OCR model"""
-    global _model, _tokenizer
+    global _model, _tokenizer, _use_fallback
     
-    if _model is None:
+    if _model is None and not _use_fallback:
         print("=" * 60)
         print("Loading DeepSeek-OCR model...")
         print("First time: ~8GB download + initialization (5-10 min)")
@@ -178,6 +180,10 @@ def get_deepseek_model():
                 print(f"🔧 Using device: {device}")
                 print("⚠️  WARNING: Running on CPU will be VERY slow!")
                 print("   Recommended: Use NVIDIA GPU for practical performance.")
+        except Exception as cuda_error:
+            print(f"🔧 Using device: cpu (CUDA check failed: {cuda_error})")
+            print("⚠️  WARNING: Running on CPU will be VERY slow!")
+            print("   Recommended: Use NVIDIA GPU for practical performance.")
         except Exception as cuda_error:
             print(f"🔧 Using device: cpu (CUDA check failed: {cuda_error})")
             print("⚠️  WARNING: Running on CPU will be VERY slow!")
@@ -297,61 +303,123 @@ def get_deepseek_model():
             print("=" * 60)
             
         except Exception as e:
-            print(f"\n❌ Error loading model: {str(e)}")
-            raise
+            print(f"\n❌ Error loading DeepSeek-OCR model: {str(e)}")
+            print("⚠️  Switching to EasyOCR fallback...")
+            _use_fallback = True
+            return None, None
     
     return _model, _tokenizer
 
+def get_easyocr_reader():
+    """Lazy load EasyOCR reader as fallback"""
+    global _ocr_reader
+    
+    if _ocr_reader is None:
+        print("\n" + "=" * 60)
+        print("Initializing EasyOCR (fallback mode)...")
+        print("=" * 60)
+        try:
+            import easyocr
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"🔧 Loading EasyOCR on {device}...")
+            _ocr_reader = easyocr.Reader(['en'], gpu=(device == "cuda"))
+            print(f"✅ EasyOCR initialized successfully!")
+        except ImportError:
+            print("📥 EasyOCR not installed. Installing...")
+            import subprocess
+            import sys
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'easyocr'])
+            import easyocr
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            _ocr_reader = easyocr.Reader(['en'], gpu=(device == "cuda"))
+            print(f"✅ EasyOCR installed and initialized!")
+        except Exception as e:
+            print(f"⚠️  GPU initialization failed: {e}")
+            print("Trying CPU mode...")
+            import easyocr
+            _ocr_reader = easyocr.Reader(['en'], gpu=False)
+            print("✅ EasyOCR initialized on CPU!")
+    
+    return _ocr_reader
+
 def extract_text_from_image(image: Image.Image) -> str:
-    """Extract text from an image using DeepSeek-OCR"""
+    """Extract text from an image using DeepSeek-OCR with EasyOCR fallback"""
+    global _use_fallback
+    
     try:
         print("\n🔄 Starting OCR extraction...")
-        model, tokenizer = get_deepseek_model()
         
-        # Save image temporarily (model expects file path)
-        import tempfile
-        temp_dir = tempfile.mkdtemp()
-        temp_image_path = os.path.join(temp_dir, 'input_image.png')
-        image.save(temp_image_path, 'PNG')
+        # Try DeepSeek-OCR first if not in fallback mode
+        if not _use_fallback:
+            try:
+                model, tokenizer = get_deepseek_model()
+                
+                # Check if model loaded successfully
+                if model is None or tokenizer is None:
+                    print("⚠️  DeepSeek-OCR unavailable, using EasyOCR fallback")
+                    _use_fallback = True
+                else:
+                    # Save image temporarily (model expects file path)
+                    import tempfile
+                    temp_dir = tempfile.mkdtemp()
+                    temp_image_path = os.path.join(temp_dir, 'input_image.png')
+                    image.save(temp_image_path, 'PNG')
+                    
+                    try:
+                        # Prepare the prompt (using DeepSeek-OCR's format)
+                        prompt = "<image>\nExtract all text from this image."
+                        
+                        print("📝 Processing image with DeepSeek-OCR...")
+                        print("⚙️  Using: base_size=1024, image_size=640, crop_mode=True")
+                        
+                        # Use DeepSeek-OCR's custom infer method
+                        result = model.infer(
+                            tokenizer=tokenizer,
+                            prompt=prompt,
+                            image_file=temp_image_path,
+                            output_path=temp_dir,
+                            base_size=1024,
+                            image_size=640,
+                            crop_mode=True,
+                            save_results=False,
+                            test_compress=False
+                        )
+                        
+                        # Clean up result
+                        if result:
+                            text = result.strip()
+                            if text.startswith("Extract all text from this image."):
+                                text = text.replace("Extract all text from this image.", "").strip()
+                        else:
+                            text = "No text detected in the image."
+                        
+                        print(f"✅ DeepSeek-OCR complete! Extracted {len(text)} characters\n")
+                        return text
+                        
+                    finally:
+                        # Clean up temp files
+                        import shutil
+                        if os.path.exists(temp_dir):
+                            shutil.rmtree(temp_dir, ignore_errors=True)
+                            
+            except Exception as deepseek_error:
+                print(f"⚠️  DeepSeek-OCR error: {str(deepseek_error)}")
+                print("🔄 Falling back to EasyOCR...")
+                _use_fallback = True
         
-        try:
-            # Prepare the prompt (using DeepSeek-OCR's format)
-            prompt = "<image>\nExtract all text from this image."
+        # Use EasyOCR fallback
+        if _use_fallback:
+            reader = get_easyocr_reader()
             
-            print("📝 Processing image with DeepSeek-OCR...")
-            print("⚙️  Using: base_size=1024, image_size=640, crop_mode=True")
+            print("📝 Processing image with EasyOCR...")
+            import numpy as np
+            image_array = np.array(image)
             
-            # Use DeepSeek-OCR's custom infer method
-            # output_path is required (even though we won't save results)
-            result = model.infer(
-                tokenizer=tokenizer,
-                prompt=prompt,
-                image_file=temp_image_path,
-                output_path=temp_dir,  # Required, but save_results=False means no files saved
-                base_size=1024,        # Base resolution
-                image_size=640,        # Crop resolution
-                crop_mode=True,        # Enable cropping for better accuracy
-                save_results=False,    # Don't actually save files
-                test_compress=False
-            )
-            
-            # Clean up result
-            if result:
-                text = result.strip()
-                # Remove the prompt from the result if present
-                if text.startswith("Extract all text from this image."):
-                    text = text.replace("Extract all text from this image.", "").strip()
-            else:
-                text = "No text detected in the image."
-            
-            print(f"✅ OCR complete! Extracted {len(text)} characters\n")
-            return text
-            
-        finally:
-            # Clean up temporary files and directory
-            import shutil
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
+            results = reader.readtext(image_array, detail=0, paragraph=True)
+            text = '\n'.join(results)
+            result = text if text.strip() else "No text detected in the image."
+            print(f"✅ EasyOCR complete! Extracted {len(result)} characters\n")
+            return result
         
     except Exception as e:
         print(f"❌ OCR Error: {str(e)}")
@@ -442,12 +510,14 @@ def health_check():
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("🚀 DeepSeek-OCR Web Application")
+    print("🚀 DeepSeek-OCR Web Application (with EasyOCR fallback)")
     print("=" * 60)
     print("Starting Flask server...")
-    print("\n📌 Note: DeepSeek-OCR model will load on first request")
+    print("\n📌 Primary: DeepSeek-OCR model")
     print("   First time: ~8GB download (5-10 minutes)")
     print("   Subsequent: ~30-60 seconds model loading")
+    print("\n📌 Fallback: EasyOCR")
+    print("   Automatically used if DeepSeek-OCR fails to load")
     print("=" * 60)
     print("\n🌐 Access at: http://localhost:5000")
     print("=" * 60 + "\n")
